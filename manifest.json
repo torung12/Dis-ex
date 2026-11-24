@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Discord Evidence Lite",
+  "version": "2.0.3",
+  "description": "Discord Edge/Chrome: pinned channel locale fix, recoverable next-channel navigation",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://discord.com/*",
+    "https://ptb.discord.com/*",
+    "https://canary.discord.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Discord Evidence Lite"
+  },
+  "commands": {
+    "click-activity": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y"
+      },
+      "description": "เปิดฟอร์มกิจกรรม"
+    },
+    "next-channel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U"
+      },
+      "description": "ห้องถัดไป"
+    }
+  }
+}

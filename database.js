@@ -1,0 +1,37 @@
+const $=id=>document.getElementById(id);
+let rows=[],used={},selectedIndex=-1,editing=-1,selectedRows=new Set();
+const key=r=>`${r.group}\t${r.round}`;
+const csvCell=v=>'"'+String(v??'').replaceAll('"','""')+'"';
+const fields=['eGroup','eRound','eSteam','eCode1','eCode2','eCode3'];
+function message(s){$('count').textContent=s;}
+async function load(){const data=await chrome.storage.local.get(['rows','used']);rows=Array.isArray(data.rows)?data.rows:[];used=data.used||{};selectedIndex=-1;selectedRows.clear();const previous=$('group').value;const gs=[...new Set(rows.map(r=>r.group))];$('group').replaceChildren(new Option('ทุกกลุ่ม',''),...gs.map(g=>new Option(g,g)));$('group').value=gs.includes(previous)?previous:'';render();}
+async function persist(){await chrome.storage.local.set({rows,used});render();}
+// Shorten only the visible table text. Stored values and editing remain unchanged.
+function compactDisplay(value){
+  return String(value??'').replace(/^https?:\/\/(?:www\.)?facebook\.com\/groups\//i,'').replace(/^https?:\/\/(?:www\.)?steamcommunity\.com\//i,'');
+}
+function render(){const q=$('search').value.toLowerCase().trim(),g=$('group').value,st=$('state').value;const matches=rows.map((r,i)=>({r,i})).filter(({r})=>(!g||r.group===g)&&(!st||(st==='done'?!!used[key(r)]:!used[key(r)]))&&[r.group,r.round,r.steam,...r.codes].some(x=>String(x??'').toLowerCase().includes(q)));
+message(`แสดง ${matches.length} / ${rows.length} แถว • เสร็จ ${rows.filter(r=>used[key(r)]).length} • คงเหลือ ${rows.filter(r=>!used[key(r)]).length}`);
+const body=$('body');body.replaceChildren();for(const {r,i} of matches){const tr=document.createElement('tr');if(selectedRows.has(i)||i===selectedIndex)tr.className='selected';const tdCheck=document.createElement('td');const cb=document.createElement('input');cb.type='checkbox';cb.checked=selectedRows.has(i);cb.setAttribute('aria-label',`เลือกกลุ่ม ${r.group} รอบ ${r.round}`);cb.onchange=()=>{if(cb.checked)selectedRows.add(i);else selectedRows.delete(i);render();};tdCheck.appendChild(cb);tr.appendChild(tdCheck);for(const v of [r.group,r.round,r.steam,...r.codes,used[key(r)]?'เสร็จ':'รอ']){const td=document.createElement('td');td.textContent=compactDisplay(v);td.title=String(v??'');tr.appendChild(td);}tr.onclick=()=>{selectedIndex=i;render();};body.appendChild(tr);}
+for(const id of ['edit','randomOne'])$(id).disabled=selectedIndex<0||!rows[selectedIndex];$('delete').disabled=selectedRows.size===0;$('delete').textContent=`ลบแถวที่เลือก (${selectedRows.size})`;$('checkAll').checked=matches.length>0&&matches.every(({i})=>selectedRows.has(i));$('checkAll').indeterminate=matches.some(({i})=>selectedRows.has(i))&&!$('checkAll').checked;}
+function openEditor(index){editing=index;const r=index<0?{group:$('group').value||'A',round:String(Math.max(0,...rows.filter(x=>x.group===($('group').value||'A')).map(x=>Number(x.round)||0))+1),steam:'',codes:['','','']}:rows[index];$('editorTitle').textContent=index<0?'เพิ่มข้อมูล':'แก้ไขข้อมูล';[r.group,r.round,r.steam,...r.codes].forEach((v,i)=>$(fields[i]).value=v);$('editor').showModal();}
+$('add').onclick=()=>openEditor(-1);$('selectVisible').onclick=()=>{for(const {i} of visibleRows())selectedRows.add(i);render();};$('clearSelection').onclick=()=>{selectedRows.clear();render();};$('checkAll').onchange=e=>{for(const {i} of visibleRows()){if(e.target.checked)selectedRows.add(i);else selectedRows.delete(i);}render();};function visibleRows(){const q=$('search').value.toLowerCase().trim(),g=$('group').value,st=$('state').value;return rows.map((r,i)=>({r,i})).filter(({r})=>(!g||r.group===g)&&(!st||(st==='done'?!!used[key(r)]:!used[key(r)]))&&[r.group,r.round,r.steam,...r.codes].some(x=>String(x??'').toLowerCase().includes(q)));}$('edit').onclick=()=>{if(selectedIndex>=0)openEditor(selectedIndex);};$('cancel').onclick=()=>$('editor').close();
+$('editForm').onsubmit=async e=>{e.preventDefault();const [group,round,steam,...codes]=fields.map(id=>$(id).value.trim());const n=Number(round);if(!group||!Number.isSafeInteger(n)||n<1)return alert('กรอกกลุ่มและจำนวนรอบเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป');if(editing<0){const existing=new Set(rows.filter(r=>r.group===group).map(r=>String(r.round)));const toCreate=[];for(let i=1;i<=n;i++)if(!existing.has(String(i)))toCreate.push({group,round:String(i),steam,codes:[...codes]});if(!toCreate.length)return alert('กลุ่มนี้มีรอบ 1 ถึง '+n+' ครบแล้ว');if(!confirm(`เพิ่ม ${toCreate.length} แถว (รอบที่ยังไม่มี ตั้งแต่ 1 ถึง ${n}) ใช่ไหม?`))return;rows.push(...toCreate);selectedIndex=rows.length-toCreate.length;}else{if(rows.some((r,i)=>i!==editing&&r.group===group&&r.round===round))return alert('กลุ่มและรอบนี้มีอยู่แล้ว');const old=rows[editing];delete used[key(old)];rows[editing]={group,round,steam,codes};selectedIndex=editing;delete used[key(rows[editing])];}selectedRows.clear();$('editor').close();await persist();};
+$('delete').onclick=async()=>{const indices=[...selectedRows].filter(i=>rows[i]).sort((a,b)=>b-a);if(!indices.length)return;if(!confirm(`ลบข้อมูล ${indices.length} แถวที่เลือกอย่างถาวรใช่ไหม?`))return;for(const i of indices){delete used[key(rows[i])];rows.splice(i,1);}selectedRows.clear();selectedIndex=-1;await persist();};
+function randomLink(s){if(!/^https?:\/\/(?:www\.)?facebook\.com\/groups\/[^/?#]+\/(?:permalink|pending_posts)\/\d+\/?(?:[?#].*)?$/i.test(s))throw Error('สุ่มได้เฉพาะลิงก์ Facebook /groups/.../permalink/ หรือ /pending_posts/');const nums=new Uint32Array(s.length);crypto.getRandomValues(nums);let i=0;let out=s.replace(/\d/g,()=>String(nums[i++]%10));if(out===s){const pos=out.search(/\d/);if(pos>=0)out=out.slice(0,pos)+((Number(out[pos])+1)%10)+out.slice(pos+1);}return out;}
+async function randomize(indices){try{const updated=indices.map(i=>({i,codes:rows[i].codes.map(randomLink)}));if(!updated.length)return alert('ไม่มีข้อมูลให้สุ่ม');if(!confirm(`สุ่มลิงก์ ${updated.length*3} รายการ? ลิงก์ที่สุ่มอาจไม่มีอยู่จริง และสถานะของแถวจะถูกรีเซ็ต`))return;for(const {i,codes} of updated){delete used[key(rows[i])];rows[i].codes=codes;}if(indices.length===rows.length&&rows.length){
+ const firstGroup=rows[0].group;
+ const firstIndex=rows.findIndex(r=>r.group===firstGroup);
+ await chrome.storage.local.set({selectedGroup:firstGroup,selectedRecord:String(firstIndex)});
+ selectedIndex=firstIndex;
+ selectedRows.clear();
+ $('group').value=firstGroup;
+ $('state').value='';
+ $('search').value='';
+}
+await persist();}catch(e){alert(e.message);}}
+$('randomAll').onclick=()=>randomize(rows.map((_,i)=>i));
+$('randomOne').onclick=()=>{if(selectedIndex>=0)randomize([selectedIndex]);};$('randomGroup').onclick=()=>{const g=$('group').value;if(!g)return alert('กรุณาเลือกกลุ่มก่อนสุ่ม');randomize(rows.map((r,i)=>r.group===g?i:-1).filter(i=>i>=0));};
+$('search').oninput=render;$('group').onchange=()=>{selectedIndex=-1;selectedRows.clear();render();};$('state').onchange=render;$('refresh').onclick=load;
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.rows||changes.used))load();});
+$('export').onclick=()=>{const csv=[['กลุ่ม','รอบ','Steam ID','รหัส 1','รหัส 2','รหัส 3','สถานะ'],...rows.map(r=>[r.group,r.round,r.steam,...r.codes,used[key(r)]?'เสร็จ':'รอ'])].map(x=>x.map(csvCell).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='evidence_database.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};load();
